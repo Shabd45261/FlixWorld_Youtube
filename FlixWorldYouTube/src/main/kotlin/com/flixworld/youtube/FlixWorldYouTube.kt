@@ -9,18 +9,21 @@ import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 
 /**
- * Flix YouTube — videos, channels and playlists.
+ * Flix World — YouTube. ONE provider combining videos AND Shorts.
  *
- * Extraction is delegated to NewPipeExtractor (same library the official
- * CloudStream YouTube extension uses); CloudStream's own YouTube extractor
- * resolves the actual streams via loadExtractor().
+ * Home rows mirror youtube_scrapers.py's HOME_SHELVES (Trending Now, Music,
+ * Lofi & Chill, Documentaries, Science & Tech, Cooking) plus a "Shorts" row.
  *
- * The Home tab rebuilds youtube_scrapers.py's HOME_SHELVES as rows, so the
- * layout matches the Flix World app.
+ * Extraction is delegated to NewPipeExtractor; the actual streams are resolved
+ * by CloudStream's own YouTube extractor via loadExtractor().
+ *
+ * Shorts note: NewPipe only reports duration for some search entries (unknown
+ * = -1). Filtering strictly on duration emptied the Shorts row, so entries
+ * with an UNKNOWN duration are kept; only a KNOWN duration > 3 min is dropped.
  */
-open class FlixYoutubeProvider : MainAPI() {
+class FlixWorldYouTube : MainAPI() {
     override var mainUrl = "https://www.youtube.com"
-    override var name = "Flix YouTube"
+    override var name = "FlixWorld YouTube"
     override var lang = "en"
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.Others, TvType.Live, TvType.TvSeries)
@@ -29,7 +32,6 @@ open class FlixYoutubeProvider : MainAPI() {
 
     private data class Shelf(val title: String, val kind: String, val query: String)
 
-    // Mirrors HOME_SHELVES in youtube_scrapers.py. kind "trending" -> kiosk, else search.
     private val shelves = listOf(
         Shelf("Trending Now", "trending", "Trending"),
         Shelf("Music", "search", "music videos"),
@@ -43,29 +45,32 @@ open class FlixYoutubeProvider : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val rows = ArrayList<HomePageList>()
-        for (s in shelves) {
-            val items = try {
-                if (s.kind == "trending") kioskItems(s.query, 18) else searchItems(s.query, 18)
-            } catch (e: Exception) {
-                emptyList<SearchResponse>()
+
+        // Shelves in parallel (one network call each).
+        val shelfResults = try {
+            shelves.amap { s ->
+                val items = try {
+                    if (s.kind == "trending") kioskItems(s.query, 18) else searchItems(s.query, 18)
+                } catch (_: Exception) {
+                    emptyList<SearchResponse>()
+                }
+                Pair(s.title, items)
             }
-            if (items.isNotEmpty()) rows.add(HomePageList(s.title, items, true))
+        } catch (_: Exception) {
+            emptyList()
         }
+        for ((title, items) in shelfResults) {
+            if (items.isNotEmpty()) rows.add(HomePageList(title, items, true))
+        }
+
+        // Shorts row.
+        try {
+            val shorts = shortsItems(24)
+            if (shorts.isNotEmpty()) rows.add(HomePageList("Shorts", shorts, false))
+        } catch (_: Exception) {
+        }
+
         return newHomePageResponse(rows, false)
-    }
-
-    private val searchPageCache = mutableMapOf<String, Page?>()
-
-    override suspend fun search(query: String, page: Int): SearchResponseList {
-        val ex = service.getSearchExtractor(query)
-        val pageData = if (!searchPageCache.containsKey(query)) {
-            ex.fetchPage()
-            ex.initialPage.also { searchPageCache[query] = it.nextPage }
-        } else {
-            val next = searchPageCache[query] ?: return newSearchResponseList(emptyList(), false)
-            ex.getPage(next).also { searchPageCache[query] = it.nextPage }
-        }
-        return newSearchResponseList(pageData.items.mapNotNull { it.toItem() }, pageData.hasNextPage())
     }
 
     private fun kioskItems(id: String, limit: Int): List<SearchResponse> {
@@ -81,13 +86,57 @@ open class FlixYoutubeProvider : MainAPI() {
         return ex.initialPage.items.take(limit).mapNotNull { it.toItem() }
     }
 
+    private fun shortsItems(limit: Int): List<SearchResponse> {
+        val seen = HashSet<String>()
+        val out = ArrayList<SearchResponse>()
+        for (q in listOf("#shorts", "#shorts viral", "#shorts trending")) {
+            try {
+                val ex = service.getSearchExtractor(q)
+                ex.fetchPage()
+                for (item in ex.initialPage.items) {
+                    val sr = item.toShortItem() ?: continue
+                    if (seen.add(sr.url)) out.add(sr)
+                }
+            } catch (_: Exception) {
+            }
+            if (out.size >= limit) break
+        }
+        return out.take(limit)
+    }
+
     private fun InfoItem.toItem(): SearchResponse? {
-        val u = url
-        val t = name
-        if (u.isNullOrBlank() || t.isNullOrBlank()) return null
+        val u = url ?: return null
+        val t = name ?: return null
         return newMovieSearchResponse(t, u, TvType.Others) {
             this.posterUrl = thumbnails.lastOrNull()?.url
         }
+    }
+
+    private fun InfoItem.toShortItem(): SearchResponse? {
+        if (this !is StreamInfoItem) return null
+        val d = duration
+        if (d > 0 && d > 180) return null
+        val u = url ?: return null
+        val t = name ?: return null
+        return newMovieSearchResponse(t, u, TvType.Others) {
+            this.posterUrl = thumbnails.lastOrNull()?.url
+        }
+    }
+
+    // ---- search / load / links ------------------------------------------
+
+    private val searchPageCache = mutableMapOf<String, Page?>()
+
+    override suspend fun search(query: String, page: Int): SearchResponseList {
+        val ex = service.getSearchExtractor(query)
+        val pageData = if (!searchPageCache.containsKey(query)) {
+            ex.fetchPage()
+            ex.initialPage.also { searchPageCache[query] = it.nextPage }
+        } else {
+            val next = searchPageCache[query] ?: return newSearchResponseList(emptyList(), false)
+            ex.getPage(next).also { searchPageCache[query] = it.nextPage }
+        }
+        return newSearchResponseList(pageData.items.mapNotNull { it.toItem() }, pageData.hasNextPage())
     }
 
     override suspend fun load(url: String): LoadResponse {
@@ -119,13 +168,10 @@ open class FlixYoutubeProvider : MainAPI() {
             url,
         ) {
             plot = info.description?.content?.toString() ?: ""
-
-            // Prefer the 16:9 thumbnail; NewPipe returns several sizes.
             posterUrl = info.thumbnails
                 .filter { (it.width ?: 0) > (it.height ?: 0) }
                 .lastOrNull()?.url
                 ?: info.thumbnails.lastOrNull()?.url
-
             duration = info.duration.toInt()
             info.uploaderName?.takeIf { it.isNotBlank() }?.let { up ->
                 actors = listOf(ActorData(Actor(up, info.uploaderAvatars.lastOrNull()?.url ?: "")))
