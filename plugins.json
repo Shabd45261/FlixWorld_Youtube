@@ -1,0 +1,27 @@
+[
+    {
+        "url": "https://raw.githubusercontent.com/Shabd45261/FlixWorld_Youtube/builds/FlixWorldYouTube.cs3",
+        "status": 1,
+        "version": 1,
+        "name": "FlixWorldYouTube",
+        "internalName": "FlixWorldYouTube",
+        "authors": [
+            "FlixWorld"
+        ],
+        "description": "Flix World YouTube: videos, channels, playlists and Shorts",
+        "fileSize": 16706,
+        "repositoryUrl": "https://github.com/Shabd45261/FlixWorld_Youtube",
+        "language": "en",
+        "tvTypes": [
+            "Other",
+            "Live",
+            "TvSeries"
+        ],
+        "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/YouTube_full-color_icon_%282017%29.svg/3840px-YouTube_full-color_icon_%282017%29.svg.png",
+        "apiVersion": 1,
+        "fileHash": "sha256-b685ebe453c53814b60a4d3ac4aff37cb33d22e977e12e4b897248cfcae74714",
+        "jarFileSize": 66824,
+        "jarUrl": "https://raw.githubusercontent.com/Shabd45261/FlixWorld_Youtube/builds/FlixWorldYouTube.jar",
+        "jarHash": "sha256-29c9e236cc13d2aa9ec8b1d8e78df2555b1f89dd2e1c346bf9041ee2367a7391"
+    }
+]
