@@ -1,0 +1,8 @@
+{
+    "name": "Flix World YouTube",
+    "description": "Flix World YouTube: videos, channels, playlists and Shorts",
+    "manifestVersion": 1,
+    "pluginLists": [
+      "https://raw.githubusercontent.com/Shabd45261/FlixWorld_Youtube/builds/plugins.json"
+    ]
+}
