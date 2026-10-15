@@ -123,6 +123,19 @@ class FlixWorldYouTube : MainAPI() {
         }
     }
 
+    /**
+     * CloudStream renders `plot` as Markdown (Markwon). Bare URLs are only
+     * "linkified" (coloured) and a tap falls through to the expand/collapse
+     * handler; only real Markdown links `[text](url)` become clickable spans
+     * that open the browser. So convert bare URLs into Markdown links.
+     */
+    private fun markdownLinks(text: String): String {
+        if (text.isBlank()) return text
+        return Regex("https?://[^\\s<>()\\[\\]]+").replace(text) { m ->
+            "[${m.value}](${m.value})"
+        }
+    }
+
     // ---- search / load / links ------------------------------------------
 
     private val searchPageCache = mutableMapOf<String, Page?>()
@@ -167,7 +180,7 @@ class FlixWorldYouTube : MainAPI() {
             if (info.streamType?.name?.contains("LIVE") == true) TvType.Live else TvType.Others,
             url,
         ) {
-            plot = info.description?.content?.toString() ?: ""
+            plot = markdownLinks(info.description?.content?.toString() ?: "")
             posterUrl = info.thumbnails
                 .filter { (it.width ?: 0) > (it.height ?: 0) }
                 .lastOrNull()?.url
